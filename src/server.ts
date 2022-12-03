@@ -5,6 +5,7 @@ const { tracer, api } = registerProvider('observability')
 import express, { Express } from "express";
 import { logger } from './logger/logging';
 import axios from 'axios';
+import { fetchRandomMessage } from './service';
 
 const createSpan = (name: string) => {
   const jobName = process.env.JOB_NAME || 'observability';
@@ -17,6 +18,28 @@ const PORT: number = parseInt(process.env.PORT || "5000");
 const app: Express = express();
 
 app.use(addTraceIdInRequest);
+
+app.get('/', async (req, res) => {
+  await tracer.startActiveSpan('Get /', async (span) => {
+    span.setAttribute('job', 'observability');
+    const { traceId } = span.spanContext();
+    try {
+      const data = await fetchRandomMessage(traceId)
+      logger.info('Success fetch to get random messages', { traceId });
+      span.setStatus({ code: api.SpanStatusCode.OK });
+      res.status(201).send(data.slip.advice);
+    } catch (error) {
+      logger.error('Error to handle request', {
+        traceId: span.spanContext().traceId,
+        error: error.message
+      });
+      span.setStatus({ code: api.SpanStatusCode.ERROR });
+      res.status(500).send();
+    } finally {
+      span.end();
+    }
+  });
+});
 
 app.get("/health-check", (req, res) => {
   const { traceId } = req.headers;
